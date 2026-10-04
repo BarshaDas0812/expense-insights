@@ -53,6 +53,7 @@ These are my decisions; Claude Code wrote the code and text.
 - **Asked for tests before fixes.** For every fix, I required a failing test first and the test output showing the failure, then the fix, then a full test-suite run.
 - **Chose which issues to fix.** From the review I chose the two confirmed rule-based bugs, the gaps in the LLM fallback, and the handling of `stop_reason == "max_tokens"`. The other findings are left as known limitations, listed below.
 - **Kept the Co-Authored-By lines.** Commits made by Claude Code end with a `Co-Authored-By: Claude Opus 5.5` line, and I chose to keep them.
+- **Verified the fix in the running app.** After the fixes, I started the server and asked the assistant 'How much did I spend in the last 0 days?' in the browser. It returned the 'couldn't work out a valid time period' answer instead of a server error.
 
 ## Problems encountered
 
