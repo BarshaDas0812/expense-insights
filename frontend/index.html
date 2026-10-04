@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Expense Insights</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <h1>Expense Insights</h1>
+    <p class="subtitle">Record spending, see where it goes, and ask questions about it.</p>
+  </header>
+
+  <main class="layout">
+    <section class="summary" aria-labelledby="summary-heading">
+      <h2 id="summary-heading" class="visually-hidden">Summary</h2>
+      <dl class="stat-band">
+        <div class="stat"><dt>Total spent</dt><dd id="stat-total">–</dd></div>
+        <div class="stat"><dt>Expenses recorded</dt><dd id="stat-count">–</dd></div>
+        <div class="stat"><dt id="stat-month-label">This month</dt><dd id="stat-month">–</dd></div>
+        <div class="stat"><dt>Top category</dt><dd id="stat-top-category">–</dd></div>
+        <div class="stat"><dt>Largest expense</dt><dd id="stat-top-expense">–</dd></div>
+      </dl>
+    </section>
+
+    <div class="main-column">
+      <section class="panel" aria-labelledby="breakdown-heading">
+        <h2 id="breakdown-heading">Spending by category</h2>
+        <ol id="category-chart" class="category-chart" aria-live="polite"></ol>
+        <p id="chart-empty" class="empty" hidden>No spending yet. Add an expense to see the breakdown.</p>
+      </section>
+
+      <section class="panel" aria-labelledby="form-heading">
+        <h2 id="form-heading">Add an expense</h2>
+        <form id="expense-form" class="expense-form" novalidate>
+          <label>Date
+            <input type="date" name="date" required>
+            <span class="field-error" data-error-for="date"></span>
+          </label>
+          <label>Category
+            <select name="category" required></select>
+            <span class="field-error" data-error-for="category"></span>
+          </label>
+          <label>Amount (₹)
+            <input type="number" name="amount" min="0.01" step="0.01" inputmode="decimal" required>
+            <span class="field-error" data-error-for="amount"></span>
+          </label>
+          <label>Payment method
+            <select name="payment_method" required></select>
+            <span class="field-error" data-error-for="payment_method"></span>
+          </label>
+          <label class="span-2">Description
+            <input type="text" name="description" maxlength="255" required placeholder="e.g. Cab to client office">
+            <span class="field-error" data-error-for="description"></span>
+          </label>
+          <div class="form-actions span-2">
+            <button type="submit" id="submit-button" class="primary">Add expense</button>
+            <button type="button" id="cancel-edit" hidden>Cancel editing</button>
+            <p id="form-status" class="form-status" role="status"></p>
+          </div>
+        </form>
+      </section>
+
+      <section class="panel" aria-labelledby="list-heading">
+        <h2 id="list-heading">Expenses</h2>
+        <form id="filters" class="filters" role="search">
+          <label class="span-2">Search descriptions
+            <input type="search" name="q" placeholder="Search…">
+          </label>
+          <label>Category <select name="category"><option value="">All</option></select></label>
+          <label>Payment <select name="payment_method"><option value="">All</option></select></label>
+          <label>From <input type="date" name="start_date"></label>
+          <label>To <input type="date" name="end_date"></label>
+          <label>Sort by
+            <select name="sort">
+              <option value="date:desc">Newest first</option>
+              <option value="date:asc">Oldest first</option>
+              <option value="amount:desc">Largest amount</option>
+              <option value="amount:asc">Smallest amount</option>
+            </select>
+          </label>
+          <button type="reset">Clear filters</button>
+        </form>
+        <p id="list-error" class="error-banner" role="alert" hidden></p>
+        <div class="table-wrap">
+          <table class="expense-table">
+            <thead>
+              <tr>
+                <th scope="col">Date</th>
+                <th scope="col">Description</th>
+                <th scope="col">Category</th>
+                <th scope="col">Payment</th>
+                <th scope="col" class="num">Amount</th>
+                <th scope="col"><span class="visually-hidden">Actions</span></th>
+              </tr>
+            </thead>
+            <tbody id="expense-rows"></tbody>
+          </table>
+        </div>
+        <p id="list-empty" class="empty" hidden>No expenses match these filters.</p>
+        <div class="list-footer">
+          <p id="list-summary"></p>
+          <div class="pager">
+            <button type="button" id="prev-page">Previous</button>
+            <span id="page-info"></span>
+            <button type="button" id="next-page">Next</button>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <aside class="assistant panel" aria-labelledby="assistant-heading">
+      <h2 id="assistant-heading">Ask about your spending</h2>
+      <p class="assistant-mode" id="assistant-mode"></p>
+      <div id="chat-log" class="chat-log" aria-live="polite"></div>
+      <div class="suggestions" id="suggestions">
+        <button type="button">How much did I spend on travel this month?</button>
+        <button type="button">What is my highest spending category?</button>
+        <button type="button">Show me the three largest expenses.</button>
+        <button type="button">What percentage of my total spending went to marketing?</button>
+      </div>
+      <form id="assistant-form" class="assistant-form">
+        <label for="question" class="visually-hidden">Your question</label>
+        <input id="question" name="question" type="text" maxlength="500" autocomplete="off"
+               placeholder="e.g. How much did I spend on software?">
+        <button type="submit" class="primary">Ask</button>
+      </form>
+    </aside>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
