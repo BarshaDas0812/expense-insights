@@ -1,6 +1,10 @@
+import http.client
 import json
+import sqlite3
 import unittest
+from unittest import mock
 
+from app import repository
 from app.assistant.llm_client import LLMError
 from app.assistant.rule_based import detect_intent, extract_period, extract_top_n
 from app.assistant.tools import ToolError, execute_tool
@@ -65,6 +69,21 @@ class RuleBasedAssistantTests(SeededAssistantCase):
 
     def test_no_matching_data(self):
         self.assertIn("no Food expenses", self.ask("How much did I spend on food last month?")["answer"])
+
+    def test_no_matching_data_without_category(self):
+        answer = self.ask("How much did I spend yesterday?")["answer"]
+        self.assertEqual(answer, "You have no expenses recorded yesterday.")
+
+    def test_count_without_category(self):
+        answer = self.ask("How many expenses did I have this month?")["answer"]
+        self.assertEqual(answer, "You recorded 4 expenses this month, totalling ₹10,000.00.")
+
+    def test_invalid_periods_get_an_answer_not_a_server_error(self):
+        for question in ["How much did I spend in the last 0 days?",
+                         "What did I spend in january 0000?"]:
+            with self.subTest(question=question):
+                body = self.ask(question)
+                self.assertIn("time period", body["answer"])
 
     def test_unrelated_question_gets_help_text_and_no_data_access(self):
         body = self.ask("What's the weather like?")
@@ -222,3 +241,65 @@ class LLMAgentTests(SeededAssistantCase):
         self.app.config["ANTHROPIC_API_KEY"] = ""
         body = self.ask("How much did I spend on software?")
         self.assertEqual(body["provider"], "rules")
+
+    def assertFellBack(self, body):
+        self.assertEqual(body["provider"], "rules")
+        self.assertIn("₹3,500.00", body["answer"])
+        self.assertTrue(body["fallback_reason"])
+
+    def test_connection_errors_while_reading_fall_back(self):
+        # The default urllib transport is used; only the socket layer is faked.
+        for error in [ConnectionResetError("connection reset by peer"),
+                      http.client.RemoteDisconnected("remote end closed connection")]:
+            with self.subTest(error=type(error).__name__):
+                with mock.patch("urllib.request.urlopen") as urlopen:
+                    urlopen.return_value.__enter__.return_value.read.side_effect = error
+                    self.assertFellBack(self.ask("How much did I spend on software?"))
+
+    def test_undecodable_response_falls_back(self):
+        with mock.patch("urllib.request.urlopen") as urlopen:
+            urlopen.return_value.__enter__.return_value.read.return_value = b"\xff\xfe"
+            self.assertFellBack(self.ask("How much did I spend on software?"))
+
+    def test_malformed_responses_fall_back(self):
+        malformed = [
+            {"stop_reason": "end_turn", "content": ["not a block"]},
+            {"stop_reason": "end_turn", "content": "not a list"},
+            {"stop_reason": "tool_use",
+             "content": [{"type": "tool_use", "name": "get_total_spending", "input": {}}]},
+        ]
+        for response in malformed:
+            with self.subTest(response=response):
+                self.use_transport(FakeTransport([response]))
+                self.assertFellBack(self.ask("How much did I spend on software?"))
+
+    def test_unexpected_tool_failure_falls_back_without_leaking_details(self):
+        original = repository.summarize
+        calls = []
+
+        def locked_once(conn, filters):
+            calls.append(filters)
+            if len(calls) == 1:
+                raise sqlite3.OperationalError("database is locked")
+            return original(conn, filters)
+
+        self.use_transport(FakeTransport([tool_use("t1", "get_total_spending", {})]))
+        with mock.patch.object(repository, "summarize", side_effect=locked_once):
+            body = self.ask("How much did I spend on software?")
+        self.assertFellBack(body)
+        self.assertNotIn("locked", body["fallback_reason"])
+
+    def test_fallback_handles_questions_the_rules_cannot_date(self):
+        self.use_transport(FakeTransport([LLMError("HTTP 529: overloaded")]))
+        body = self.ask("How much did I spend in the last 0 days?")
+        self.assertEqual(body["provider"], "rules")
+        self.assertIn("time period", body["answer"])
+
+    def test_truncated_answer_is_not_shown_as_complete(self):
+        self.use_transport(FakeTransport([
+            {"stop_reason": "max_tokens", "content": [{"type": "text", "text": "You spent ₹3,"}]},
+        ]))
+        body = self.ask("How much did I spend on software?")
+        self.assertFellBack(body)
+        self.assertNotEqual(body["answer"], "You spent ₹3,")
+        self.assertIn("cut off", body["fallback_reason"])

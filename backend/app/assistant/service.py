@@ -38,6 +38,13 @@ def answer_question(question: str, conn, today, config) -> dict:
             logger.warning("LLM assistant failed, falling back to rules: %s", exc)
             result = RuleBasedAssistant(conn).answer(question, today)
             return {**result, "provider": "rules", "fallback_reason": str(exc)}
+        except Exception:
+            # Unexpected failures (e.g. a database error inside a tool) still fall back, but
+            # the details stay in the log rather than being sent to the client.
+            logger.exception("LLM assistant failed unexpectedly, falling back to rules")
+            result = RuleBasedAssistant(conn).answer(question, today)
+            return {**result, "provider": "rules",
+                    "fallback_reason": "The AI assistant hit an unexpected error"}
 
     result = RuleBasedAssistant(conn).answer(question, today)
     return {**result, "provider": "rules"}

@@ -55,10 +55,15 @@ class LLMAssistant:
             response = self.client.create_message(
                 system=system, messages=messages, tools=TOOL_DEFINITIONS
             )
-            content = response.get("content") or []
+            content = response["content"]
+            if response.get("stop_reason") == "max_tokens":
+                # The text or tool call was cut off mid-way; never present it as complete.
+                raise LLMError("The model's response was cut off (max_tokens reached)")
             messages.append({"role": "assistant", "content": content})
 
             tool_uses = [b for b in content if b.get("type") == "tool_use"]
+            if any(not isinstance(b.get("id"), str) for b in tool_uses):
+                raise LLMError("The model returned a tool call without an id")
             if response.get("stop_reason") != "tool_use" or not tool_uses:
                 text = "\n".join(b.get("text", "") for b in content if b.get("type") == "text")
                 if not text.strip():

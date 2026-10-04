@@ -2,6 +2,7 @@
 
 The HTTP transport is injectable so the agent loop can be tested without network access.
 """
+import http.client
 import json
 import urllib.error
 import urllib.request
@@ -24,7 +25,9 @@ def urllib_transport(url: str, headers: dict, payload: dict, timeout: float) -> 
     except urllib.error.HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")[:300]
         raise LLMError(f"Anthropic API returned HTTP {exc.code}: {body}") from None
-    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+    # OSError covers URLError, timeouts and connections reset mid-read; HTTPException covers
+    # malformed HTTP responses; ValueError covers undecodable or non-JSON bodies.
+    except (OSError, http.client.HTTPException, ValueError) as exc:
         raise LLMError(f"Could not reach the Anthropic API: {exc}") from None
 
 
@@ -52,6 +55,7 @@ class AnthropicClient:
             "content-type": "application/json",
         }
         response = self.transport(API_URL, headers, payload, self.timeout)
-        if not isinstance(response, dict) or "content" not in response:
+        content = response.get("content") if isinstance(response, dict) else None
+        if not isinstance(content, list) or not all(isinstance(b, dict) for b in content):
             raise LLMError("Unexpected response shape from the Anthropic API")
         return response

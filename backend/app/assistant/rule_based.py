@@ -9,7 +9,7 @@ import re
 from datetime import date, timedelta
 
 from ..services.stats import month_bounds
-from .tools import execute_tool
+from .tools import ToolError, execute_tool
 
 NUMBER_WORDS = {
     "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
@@ -44,6 +44,14 @@ HELP_TEXT = (
     "- What percentage of my total spending went to marketing?\n"
     "- How many UPI expenses did I have last month?"
 )
+PERIOD_HELP_TEXT = (
+    "I couldn't work out a valid time period from that question. "
+    "Try something like \"in the last 7 days\" or \"in March 2026\"."
+)
+
+
+class PeriodError(ValueError):
+    """The question names a time period that is not a valid date range."""
 
 
 def _to_int(token: str) -> int:
@@ -71,6 +79,8 @@ def extract_period(text: str, today: date):
     match = re.search(r"\b(?:last|past) " + _NUM + r" days\b", text)
     if match:
         days = _to_int(match.group(1))
+        if days < 1:
+            raise PeriodError(f"last {days} days")
         return today - timedelta(days=days - 1), today, f"in the last {days} days"
     if re.search(r"\b(this|current) year\b", text):
         return date(today.year, 1, 1), date(today.year, 12, 31), "this year"
@@ -86,6 +96,8 @@ def extract_period(text: str, today: date):
             year = int(match.group(1)) if match.group(1) else today.year
             if not match.group(1) and number > today.month:
                 year -= 1  # "in November" asked in October means last November
+            if not date.min.year <= year <= date.max.year:
+                raise PeriodError(f"year {year}")
             start, end = month_bounds(date(year, number, 1))
             return start, end, f"in {calendar.month_name[number]} {year}"
     return None, None, "overall"
@@ -142,14 +154,21 @@ class RuleBasedAssistant:
 
     def _tool(self, name: str, args: dict) -> dict:
         clean = {k: v for k, v in args.items() if v is not None}
-        result = execute_tool(self.conn, name, clean)
+        try:
+            result = execute_tool(self.conn, name, clean)
+        except ToolError as exc:
+            self.trace.append({"tool": name, "input": clean, "ok": False, "error": str(exc)})
+            raise
         self.trace.append({"tool": name, "input": clean, "ok": True})
         return result
 
     def answer(self, question: str, today: date) -> dict:
         self.trace = []
         text = " ".join(question.lower().replace("?", " ").split())
-        start, end, label = extract_period(text, today)
+        try:
+            start, end, label = extract_period(text, today)
+        except PeriodError:
+            return {"answer": PERIOD_HELP_TEXT, "tool_calls": []}
         dates = {
             "start_date": start.isoformat() if start else None,
             "end_date": end.isoformat() if end else None,
@@ -173,8 +192,12 @@ class RuleBasedAssistant:
             else:
                 return {"answer": HELP_TEXT, "tool_calls": []}
 
-        answer = handler(text=text, dates=dates, label=label, categories=categories,
-                         method=method, intent=intent)
+        try:
+            answer = handler(text=text, dates=dates, label=label, categories=categories,
+                             method=method, intent=intent)
+        except ToolError:
+            # The parsed values failed tool validation; explain instead of returning a 500.
+            answer = PERIOD_HELP_TEXT if start or end else HELP_TEXT
         return {"answer": answer, "tool_calls": self.trace}
 
     # --- Handlers ---------------------------------------------------------------------------
@@ -187,11 +210,12 @@ class RuleBasedAssistant:
                                 {**dates, "category": category, "payment_method": method})
             subject = " ".join(filter(None, [category, method])) or "all"
             count = result["expense_count"]
+            qualifier = f"{subject} " if subject != "all" else ""
             if count == 0:
-                lines.append(f"You have no {subject} expenses recorded {label}.")
+                lines.append(f"You have no {qualifier}expenses recorded {label}.")
             elif intent == "count":
                 noun = "expense" if count == 1 else "expenses"
-                lines.append(f"You recorded {count} {subject} {noun} {label}, "
+                lines.append(f"You recorded {count} {qualifier}{noun} {label}, "
                              f"totalling {result['total_formatted']}.")
             else:
                 scope = f"on {subject}" if subject != "all" else "in total"
