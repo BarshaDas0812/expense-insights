@@ -118,11 +118,13 @@ The schema is created automatically when the app starts. To manage it explicitly
 
 ```bash
 cd backend
-flask --app run init-db            # create tables (safe to re-run)
-flask --app run seed-db            # add 45 demo expenses over the last four months
-flask --app run seed-db --reset    # wipe everything, then add demo data
-flask --app run init-db --reset    # wipe everything, leave the database empty
+python -m flask --app run init-db            # create tables (safe to re-run)
+python -m flask --app run seed-db            # add 45 demo expenses over the last four months
+python -m flask --app run seed-db --reset    # wipe everything, then add demo data
+python -m flask --app run init-db --reset    # wipe everything, leave the database empty
 ```
+
+`python -m flask` is used because on Windows the plain `flask` command may not be on `PATH` after a user-level `pip install` (the scripts folder it installs to is not added to `PATH` automatically).
 
 ## Running the backend
 
