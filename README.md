@@ -31,7 +31,7 @@ Layers depend in one direction only: routes → services → repository → data
 | Database | SQLite via the standard `sqlite3` module | Zero setup; plain SQL keeps the queries visible and reviewable (no ORM needed at this size). |
 | Frontend | HTML, CSS, vanilla JavaScript | No build step; served by Flask from the same origin, so no CORS configuration. |
 | AI | Anthropic Messages API with tool use, called via the standard library | No SDK dependency; the HTTP transport is injectable for testing. |
-| Tests | `unittest`, run with `pytest` | Works with either runner; 64 tests. |
+| Tests | `unittest`, run with `pytest` | Works with either runner; 73 tests. |
 
 Runtime dependencies are just `Flask` and `python-dotenv`.
 
@@ -144,7 +144,7 @@ cd backend
 pytest              # or: python -m unittest
 ```
 
-Each test uses its own temporary database and a fixed date (15 October 2026), so results do not depend on the real calendar. The LLM tests use a scripted fake API, so no key or network is needed.
+Each test uses its own temporary database and a fixed date (15 October 2026), so results do not depend on the real calendar. The LLM tests use a scripted fake API (or a mocked `urlopen` for transport errors), so no key or network is needed.
 
 What the tests cover:
 
@@ -154,6 +154,7 @@ What the tests cover:
 - **Delete:** removal, 404s, only the target row is affected.
 - **Statistics:** empty database, month boundaries (30 Sep and 1 Nov excluded from October), tie-breaking, date-range scoping, stats after updates and deletes.
 - **Assistant:** all five example questions from the brief, period and intent parsing, tool argument validation and result caps, the LLM tool loop (including error recovery, fallback on API failure, and the step limit).
+- **Assistant robustness:** impossible periods ("last 0 days", "january 0000") get a helpful answer instead of a 500; answer wording when no category is given; fallback to rules on connection resets, undecodable responses, malformed responses and unexpected errors inside a tool (without exposing internal details); a response cut off by `max_tokens` is never shown as a complete answer.
 
 ## API reference
 
