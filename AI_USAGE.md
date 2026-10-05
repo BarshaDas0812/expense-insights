@@ -94,8 +94,6 @@ Mistakes Claude Code made and caught itself in this session:
 
 Left as known limitations (found in the review, not fixed):
 
-- No overall time limit per question: each API call has a 30-second timeout and the loop allows 6 calls, so one request can take about 3 minutes.
-- For API errors, `fallback_reason` still includes up to 300 characters of the raw Anthropic error body, which the UI displays. Only unexpected errors use the generic message.
 - `get_category_breakdown` filters only by date, so a question like "what share of my UPI spending went to marketing?" cannot be answered correctly. For list and top-N questions, the rules assistant uses only the first category it finds. A `limit` of `3.0` is rejected as not an integer.
 - Tool results rebuild paise from float rupees (`round(amount * 100)`), and `json.dumps` escapes "₹" as `₹` in what the model receives.
 - The route checks the 500-character limit before stripping whitespace.

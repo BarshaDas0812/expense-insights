@@ -1,7 +1,9 @@
 import http.client
+import io
 import json
 import sqlite3
 import unittest
+import urllib.error
 from unittest import mock
 
 from app import repository
@@ -10,6 +12,9 @@ from app.assistant.rule_based import detect_intent, extract_period, extract_top_
 from app.assistant.tools import ToolError, execute_tool
 from app.db import connect
 from tests.base import FIXED_TODAY, APITestCase
+
+# What the client sees for any Claude API failure; the details go only to the server log.
+LLM_FAILURE_REASON = "the Claude API request failed"
 
 
 class SeededAssistantCase(APITestCase):
@@ -159,16 +164,32 @@ class ToolTests(SeededAssistantCase):
 class FakeTransport:
     """Replays scripted Anthropic API responses and records every request."""
 
-    def __init__(self, responses):
+    def __init__(self, responses, clock=None, seconds_per_call=0):
         self.responses = list(responses)
         self.requests = []
+        self.timeouts = []
+        self.clock = clock
+        self.seconds_per_call = seconds_per_call
 
     def __call__(self, url, headers, payload, timeout):
         self.requests.append(json.loads(json.dumps(payload)))
+        self.timeouts.append(timeout)
+        if self.clock:
+            self.clock.now += self.seconds_per_call
         response = self.responses.pop(0)
         if isinstance(response, Exception):
             raise response
         return response
+
+
+class FakeClock:
+    """Stands in for time.monotonic; FakeTransport moves it forward on each API call."""
+
+    def __init__(self):
+        self.now = 1000.0
+
+    def __call__(self):
+        return self.now
 
 
 def tool_use(tool_id, name, args):
@@ -223,19 +244,59 @@ class LLMAgentTests(SeededAssistantCase):
         error_result = transport.requests[1]["messages"][-1]["content"][0]
         self.assertTrue(error_result["is_error"])
 
+    def ask_and_capture_log(self, question):
+        with self.assertLogs("app.assistant.service", "WARNING") as logs:
+            body = self.ask(question)
+        return body, "\n".join(logs.output)
+
     def test_falls_back_to_rules_when_api_fails(self):
         self.use_transport(FakeTransport([LLMError("HTTP 529: overloaded")]))
-        body = self.ask("How much did I spend on software?")
+        body, log = self.ask_and_capture_log("How much did I spend on software?")
         self.assertEqual(body["provider"], "rules")
-        self.assertIn("overloaded", body["fallback_reason"])
+        self.assertEqual(body["fallback_reason"], LLM_FAILURE_REASON)
+        self.assertIn("overloaded", log)
         self.assertIn("₹3,500.00", body["answer"])
+
+    def test_http_error_body_is_not_sent_to_client(self):
+        error = urllib.error.HTTPError(
+            "https://api.anthropic.com/v1/messages", 400, "Bad Request", {},
+            io.BytesIO(b'{"error": "secret-detail"}'))
+        with mock.patch("urllib.request.urlopen", side_effect=error):
+            body, log = self.ask_and_capture_log("How much did I spend on software?")
+        self.assertEqual(body["provider"], "rules")
+        self.assertEqual(body["fallback_reason"], LLM_FAILURE_REASON)
+        self.assertNotIn("secret-detail", json.dumps(body))
+        self.assertIn("secret-detail", log)
 
     def test_runaway_tool_loop_is_stopped(self):
         self.use_transport(FakeTransport([tool_use(f"t{i}", "get_category_breakdown", {})
                                           for i in range(10)]))
-        body = self.ask("What is my highest spending category?")
+        body, log = self.ask_and_capture_log("What is my highest spending category?")
         self.assertEqual(body["provider"], "rules")
-        self.assertIn("did not finish", body["fallback_reason"])
+        self.assertEqual(body["fallback_reason"], LLM_FAILURE_REASON)
+        self.assertIn("did not finish", log)
+
+    def test_question_time_limit_falls_back_to_rules(self):
+        clock = FakeClock()
+        transport = self.use_transport(FakeTransport(
+            [tool_use(f"t{i}", "get_category_breakdown", {}) for i in range(10)],
+            clock=clock, seconds_per_call=20))
+        with mock.patch("app.assistant.llm_agent.time.monotonic", clock):
+            body, log = self.ask_and_capture_log("What is my highest spending category?")
+        self.assertEqual(body["provider"], "rules")
+        self.assertEqual(body["fallback_reason"], LLM_FAILURE_REASON)
+        self.assertIn("time limit", log)
+        # Calls start at t=0, 20 and 40 seconds; at t=60 the 45-second limit has passed.
+        self.assertEqual(len(transport.requests), 3)
+
+    def test_per_call_timeout_is_capped_by_remaining_time(self):
+        clock = FakeClock()
+        transport = self.use_transport(FakeTransport(
+            [tool_use(f"t{i}", "get_category_breakdown", {}) for i in range(10)],
+            clock=clock, seconds_per_call=20))
+        with mock.patch("app.assistant.llm_agent.time.monotonic", clock):
+            self.ask_and_capture_log("What is my highest spending category?")
+        self.assertEqual(transport.timeouts, [30, 25, 5])
 
     def test_missing_api_key_falls_back(self):
         self.app.config["ANTHROPIC_API_KEY"] = ""
@@ -299,7 +360,8 @@ class LLMAgentTests(SeededAssistantCase):
         self.use_transport(FakeTransport([
             {"stop_reason": "max_tokens", "content": [{"type": "text", "text": "You spent ₹3,"}]},
         ]))
-        body = self.ask("How much did I spend on software?")
+        body, log = self.ask_and_capture_log("How much did I spend on software?")
         self.assertFellBack(body)
         self.assertNotEqual(body["answer"], "You spent ₹3,")
-        self.assertIn("cut off", body["fallback_reason"])
+        self.assertEqual(body["fallback_reason"], LLM_FAILURE_REASON)
+        self.assertIn("cut off", log)

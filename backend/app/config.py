@@ -25,6 +25,7 @@ def load_config() -> dict:
         "ANTHROPIC_API_KEY": os.environ.get("ANTHROPIC_API_KEY", "").strip(),
         "ANTHROPIC_MODEL": os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-5-5").strip(),
         "ANTHROPIC_TIMEOUT_SECONDS": _float("ANTHROPIC_TIMEOUT_SECONDS", 30.0),
+        "ANTHROPIC_TOTAL_TIMEOUT_SECONDS": _float("ANTHROPIC_TOTAL_TIMEOUT_SECONDS", 45.0),
         "ANTHROPIC_TRANSPORT": None,  # tests inject a fake HTTP transport here
         "CLOCK": date.today,          # tests inject a fixed date here
     }

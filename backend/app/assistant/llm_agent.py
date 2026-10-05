@@ -7,6 +7,7 @@ Flow:
   3. Return the model's final text answer, plus a trace of every tool call made.
 """
 import json
+import time
 from datetime import date, timedelta
 
 from ..constants import CATEGORIES, PAYMENT_METHODS
@@ -42,18 +43,25 @@ Payment methods: {", ".join(PAYMENT_METHODS)}."""
 
 
 class LLMAssistant:
-    def __init__(self, client, conn):
+    def __init__(self, client, conn, time_limit: float = 45.0):
         self.client = client
         self.conn = conn
+        self.time_limit = time_limit
 
     def answer(self, question: str, today: date) -> dict:
         system = build_system_prompt(today)
         messages = [{"role": "user", "content": question}]
         trace = []
+        deadline = time.monotonic() + self.time_limit
 
         for _ in range(MAX_STEPS):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise LLMError(f"The assistant hit the {self.time_limit:g}-second time limit")
+            # Cap each call so one slow response cannot overrun the whole question's limit.
             response = self.client.create_message(
-                system=system, messages=messages, tools=TOOL_DEFINITIONS
+                system=system, messages=messages, tools=TOOL_DEFINITIONS,
+                timeout=min(self.client.timeout, remaining),
             )
             content = response["content"]
             if response.get("stop_reason") == "max_tokens":

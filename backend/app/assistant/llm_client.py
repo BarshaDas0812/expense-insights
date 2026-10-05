@@ -41,7 +41,7 @@ class AnthropicClient:
         self.transport = transport or urllib_transport
 
     def create_message(self, *, system: str, messages: list, tools: list,
-                       max_tokens: int = 1024) -> dict:
+                       max_tokens: int = 1024, timeout: float = None) -> dict:
         payload = {
             "model": self.model,
             "max_tokens": max_tokens,
@@ -54,7 +54,8 @@ class AnthropicClient:
             "anthropic-version": API_VERSION,
             "content-type": "application/json",
         }
-        response = self.transport(API_URL, headers, payload, self.timeout)
+        response = self.transport(API_URL, headers, payload,
+                                  self.timeout if timeout is None else timeout)
         content = response.get("content") if isinstance(response, dict) else None
         if not isinstance(content, list) or not all(isinstance(b, dict) for b in content):
             raise LLMError("Unexpected response shape from the Anthropic API")

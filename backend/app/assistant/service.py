@@ -13,6 +13,10 @@ from .rule_based import RuleBasedAssistant
 
 logger = logging.getLogger(__name__)
 
+# Sent to the client for any LLM failure. The specific cause (which can include raw API
+# error bodies) is logged instead.
+LLM_FAILURE_REASON = "the Claude API request failed"
+
 
 def _wants_llm(config) -> bool:
     provider = config.get("AI_PROVIDER", "auto")
@@ -32,12 +36,14 @@ def answer_question(question: str, conn, today, config) -> dict:
                 timeout=config["ANTHROPIC_TIMEOUT_SECONDS"],
                 transport=config.get("ANTHROPIC_TRANSPORT"),
             )
-            result = LLMAssistant(client, conn).answer(question, today)
+            assistant = LLMAssistant(client, conn,
+                                     time_limit=config["ANTHROPIC_TOTAL_TIMEOUT_SECONDS"])
+            result = assistant.answer(question, today)
             return {**result, "provider": "anthropic", "model": config["ANTHROPIC_MODEL"]}
         except LLMError as exc:
             logger.warning("LLM assistant failed, falling back to rules: %s", exc)
             result = RuleBasedAssistant(conn).answer(question, today)
-            return {**result, "provider": "rules", "fallback_reason": str(exc)}
+            return {**result, "provider": "rules", "fallback_reason": LLM_FAILURE_REASON}
         except Exception:
             # Unexpected failures (e.g. a database error inside a tool) still fall back, but
             # the details stay in the log rather than being sent to the client.
