@@ -16,6 +16,8 @@ I then worked with Claude Code in a single session, in four steps:
 3. **Tests first, then fixes.** I chose which findings to fix and asked for failing tests first, with proof that they failed, then the fixes, then a full test-suite run and a commit (`46d6827`).
 4. **Documentation.** I asked it to bring `README.md` and this file up to date with what happened.
 
+Two small follow-up commits on the same day were also made with Claude Code (both end with its Co-Authored-By line): `e1bf7b1` added my manual browser check of the "last 0 days" fix to this file, and `add3227` changed the README's database commands to `python -m flask`, with a note that plain `flask` may not be on `PATH` on Windows.
+
 In a second Claude Code session I used **plan mode**: Claude Code read the code and wrote a plan without editing anything. I approved the plan unchanged. It then wrote failing tests, made the fixes, ran the full test suite and committed (`2548ebb`).
 
 ## Important prompts
@@ -125,7 +127,7 @@ Fixed, from the known limitations listed after the first session (`2548ebb`):
 
 The README change in the same prompt (`python -m flask` for the database commands, with the Windows `PATH` note) had already been made in `add3227`. Claude Code noticed this while planning and made no further change.
 
-Tests first: 3 tests were added and 3 updated, so they now expect the generic message and check the specific cause in the log. All 6 failed before the fix. Four failed because the raw error text (for example an HTTP 400 body containing "secret-detail") reached the client. The two time-limit tests at first failed only because `llm_agent.py` did not import `time` yet, so the test could not patch the clock. That did not prove the limit was missing. Claude Code added just the import and ran them again. They then failed for the real reason: 6 calls with a 30-second timeout each and no overall limit. After the fix, all 76 tests passed.
+Tests first: 3 tests were added and 3 updated, so they now expect the generic message and check the specific cause in the log. All 6 failed before the fix. Four failed because a specific error message reached the client instead of the generic one. In two of them this was raw API error text (the "overloaded" error and an HTTP 400 body containing "secret-detail"). In the other two it was the app's own message ("did not finish within 6 steps" and "cut off"). The two time-limit tests at first failed only because `llm_agent.py` did not import `time` yet, so the test could not patch the clock. That did not prove the limit was missing. Claude Code added just the import and ran them again. They then failed for the real reason: 6 calls with a 30-second timeout each and no overall limit. After the fix, all 76 tests passed.
 
 The suspicious diff: the diff view I was using showed almost every line of `AI_USAGE.md` and `.env.example` as changed in `2548ebb`. Claude Code checked the bytes of the committed files. Before and after the commit they use LF line endings only. Git's own diff, with or without `--ignore-cr-at-eol`, showed only the intended changes: 2 lines added to `.env.example` and the 2 fixed limitations removed from this file. A line-by-line comparison showed nothing else lost, including my note about verifying the "last 0 days" fix in the browser. The working copies use CRLF because `core.autocrlf=true`, so the view had compared Windows line endings against Git's LF. There was nothing to restore.
 

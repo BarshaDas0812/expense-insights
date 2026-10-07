@@ -85,7 +85,7 @@ expense-insights/
 Requires Python 3.10 or newer.
 
 ```bash
-git clone <your-repo-url> expense-insights
+git clone https://github.com/BarshaDas0812/expense-insights.git expense-insights
 cd expense-insights
 
 python -m venv .venv
@@ -93,6 +93,7 @@ python -m venv .venv
 source .venv/bin/activate
 # Windows (PowerShell)
 .venv\Scripts\Activate.ps1
+# If PowerShell blocks this script, run: Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass (this window only), then activate again
 
 pip install -r backend/requirements.txt
 cp .env.example .env        # Windows: copy .env.example .env
